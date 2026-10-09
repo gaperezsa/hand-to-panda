@@ -1,0 +1,143 @@
+# Single source of truth for constants shared by the humanoid-vision and humanoid-sim
+# environments. They do not import each other; they agree through this file and through
+# the intermediate trajectory format in docs/intermediate_format.md.
+
+project:
+  root: .
+
+markers:
+  dictionary: DICT_4X4_50
+  ids: [0, 1, 2, 3]
+
+  # Side of the full BLACK SQUARE in metres, border bits included -- this is what
+  # OpenCV means by marker length. Printed nominal is 0.100.
+  # ACTION: measure the printed square with a ruler and put the real number here.
+  # Printer scaling is the quietest way to corrupt a marker pose pipeline, and a
+  # 2% scale error is a 2% error in every distance we derive.
+  marker_length_m: 0.100
+  marker_length_measured: false      # flip to true once the ruler value is in
+
+  quiet_zone_m: 0.025                # white margin each side; printed, not taped over
+
+  # Where the tiles are MEANT to go, in the LIBERO table frame.
+  #   x = toward the operator (table depth)
+  #   y = the ROBOT's left, which is the OPERATOR'S RIGHT  <-- verified in sim:
+  #       plate at y=+0.200 renders on the agentview LEFT, cabinet at y=-0.278 on the
+  #       RIGHT, and that camera looks from behind the robot toward the operator.
+  # Getting this backwards mirrors the whole table and no rigid transform can undo it.
+  # Taping will not hit these exactly, and does not need to -- the calibration sweep
+  # measures where they actually ended up and writes board_calibration.
+  # Revised 2026-10-06. The first layout put the bowl at positions t1 and t6 within
+  # 14 mm of a marker tile -- a hand placing a bowl there covers the quiet zone and
+  # detection dies. Pushing the markers apart in y (664 -> 750 mm centre to centre)
+  # lifts the worst clearance to 57 mm at no cost in table space.
+  nominal_layout_m:
+    0: [ 0.110,  0.500]
+    1: [ 0.110, -0.250]
+    2: [-0.155, -0.250]
+    3: [-0.155,  0.500]
+  # centre-to-centre: 265 mm short side (x), 750 mm long side (y), 795 mm diagonal
+  min_object_clearance_m: 0.057
+
+  # Written by the board-calibration routine. ID 0 defines the table frame origin.
+  board_calibration: config/board_calibration.yaml
+
+  # Recording protocol check: every episode must open with at least this many markers
+  # visible for at least this long, so the frame is anchored before the hands occlude.
+  min_markers_at_start: 1
+  min_anchor_seconds: 1.0
+
+  # Thumb-index distance thresholds, in mm, measured from the first real capture.
+  # The signal is bimodal: gripping clusters at ~15 mm, open hand at ~121 mm, valley
+  # at 69 mm. A band around the valley alone still chattered, because a hand closes
+  # partway while reaching -- real motion, not noise. Widening the band plus a minimum
+  # state dwell takes it from 4 transitions to the correct 2.
+  pinch_closed_mm: 40
+  pinch_open_mm: 95
+  min_state_frames: 8
+
+table:
+  # Measured from 30 reference demos: LIBERO's table-local x,y frame IS the robot
+  # end-effector x,y frame (offset 0.002 +- 0.020 m in x, 0.007 +- 0.044 m in y;
+  # the scatter is init-state jitter). Only z differs.
+  surface_z_m: 0.90
+
+  # Similarity transform from my table to LIBERO's. 1.0 = life size.
+  # Kept as an explicit knob even though 1:1 fits the 77 x 120 cm table.
+  scale: 1.0
+
+  physical_size_m: [0.70, 1.20]      # depth (x) x width (y), measured 2026-10-07
+
+libero:
+  dataset_repo_id: lerobot/libero
+  assets_repo_id: lerobot/libero-assets
+  fps: 10.0                          # declared by the dataset; LiberoEnv defaults control_freq=20
+  control_mode: absolute             # action[:3] = absolute EEF metres, action[3:6] = axis-angle
+
+  # Replay controller, measured in gate 3c (tools/gate_3c_tracking.py).
+  # An absolute EEF path tracked with these settings reaches 6/8 on libero_spatial
+  # task_ids 2, against 5/8 for the originally recorded delta actions.
+  control_freq: 20          # NOT the 10 fps the dataset declares; 10 Hz succeeds 0%
+  tracking:
+    kp: 4.0                 # position gain; the OSC realises ~15% of a commanded delta
+    kr: 3.0                 # orientation gain
+    dwell: 2                # control steps per waypoint; halves path speed, halves lag
+    gripper_hold: 10        # extra steps held when the gripper command flips
+    max_steps: 280          # libero_spatial episode cap
+
+  # action[6] is strictly binary in every reference demo -- never an intermediate value.
+  # So the gripper is a THRESHOLD on thumb-index distance, not a regression target.
+  gripper_open: -1.0
+  gripper_closed: 1.0
+
+  # Measured from the visual mesh vertices in the compiled MuJoCo model (scale applied),
+  # which is what is actually simulated and rendered. Two earlier estimates from the raw
+  # XML were both wrong: axis-aligned collision boxes alone understated the plate by 4 cm,
+  # and the full collision hull understated the bowl by 5 mm.
+  # Panda gripper opens to 80 mm, so the rim is what gets pinched, not the whole bowl.
+  object_size_m:
+    akita_black_bowl: {diameter: 0.112, height: 0.052}
+    plate:            {diameter: 0.137, height: 0.015}
+    cream_cheese:     {footprint: [0.102, 0.053], height: 0.022}   # push obstacle
+
+layouts:
+  # ---- 50 episodes: 10 at each of 5 bowl positions -------------------------------
+  A:
+    task_suite: libero_spatial
+    episodes_per_position: 10
+    goal: "(On akita_black_bowl_1 plate_1)"
+    props_needed: [bowl, plate]      # distractors are sim-only: the arm lifts ~17 cm over them
+    target_object: akita_black_bowl_1
+    target_position_m: [0.060, 0.200]        # the plate; same in all five tasks
+    positions:
+      - {task_ids: 2, global_task_index: 38, start_m: [-0.075,  0.000],
+         instruction: "pick up the black bowl from table center and place it on the plate"}
+      - {task_ids: 0, global_task_index: 34, start_m: [-0.050,  0.200],
+         instruction: "pick up the black bowl between the plate and the ramekin and place it on the plate"}
+      - {task_ids: 8, global_task_index: 36, start_m: [ 0.010,  0.310],
+         instruction: "pick up the black bowl next to the plate and place it on the plate"}
+      - {task_ids: 1, global_task_index: 37, start_m: [-0.180,  0.320],
+         instruction: "pick up the black bowl next to the ramekin and place it on the plate"}
+      - {task_ids: 6, global_task_index: 30, start_m: [ 0.130, -0.070],
+         instruction: "pick up the black bowl next to the cookie box and place it on the plate"}
+
+  # ---- 10 episodes: gripper-free push ablation ------------------------------------
+  B:
+    task_suite: libero_goal
+    task_ids: 5
+    global_task_index: 15
+    episodes: 10
+    instruction: "push the plate to the front of the stove"
+    goal: "(On plate_1 main_table_stove_front_region)"
+    props_needed: [plate, small_box]
+    start_m: [0.050, -0.020]                  # the plate
+    goal_region_m: {x: [-0.09, -0.01], y: [0.17, 0.25]}
+    # The sim scene has a cream-cheese box ~3 cm off the direct line. The plate never
+    # leaves the table, so unlike layout A an in-plane obstacle actually blocks.
+    obstacle_m: [-0.050, 0.130]
+
+paths:
+  raw_captures: data/raw                      # Record3D exports, straight off the phone
+  interim: data/interim                       # parsed trajectories (regenerable)
+  libero_data: data/libero
+  outputs: outputs

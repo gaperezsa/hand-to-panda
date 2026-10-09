@@ -1,0 +1,43 @@
+# NOTE: git does not support inline comments in .gitignore -- a trailing "# ..." becomes
+# part of the pattern and silently matches nothing. Comments go on their own line.
+
+# Environments and caches: everything heavy lives under the project, never in git
+envs/
+.tmp/
+.cache/
+third_party/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Record3D captures, straight off the phone
+data/raw/
+# parsed trajectories (regenerable from data/raw)
+data/interim/
+# HF datasets and LIBERO assets (regenerable via tools/setup_libero.py)
+data/libero/
+
+# third-party model weights: freely downloadable, see docs/recording_protocol.md
+data/models/
+
+# checkpoints, eval logs, wandb
+outputs/
+wandb/
+
+# Media: large by default, with small curated examples committed explicitly
+*.mp4
+*.mov
+*.avi
+*.npy
+*.npz
+!docs/examples/**
+!docs/recording/**
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# one-off meeting material, not part of the submission
+slides/
